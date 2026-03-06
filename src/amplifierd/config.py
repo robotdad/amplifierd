@@ -51,6 +51,15 @@ class JsonFileSettingsSource(PydanticBaseSettingsSource):
             return {}
 
 
+def cwd_to_slug(working_dir: str) -> str:
+    """Convert a working directory path to a project slug (same convention as Amplifier CLI).
+
+    Replaces every ``/`` with ``-`` so e.g. ``/home/sam/myproject`` becomes
+    ``-home-sam-myproject``.
+    """
+    return str(working_dir).replace("/", "-")
+
+
 class DaemonSettings(BaseSettings):
     """Core daemon settings loaded from env vars, JSON file, and defaults."""
 
@@ -58,7 +67,9 @@ class DaemonSettings(BaseSettings):
     port: int = 8410
     default_working_dir: Path | None = None
     home_dir: Path = Field(default_factory=lambda: _DEFAULT_HOME_DIR)
-    sessions_dir: Path = Field(default_factory=lambda: Path.home() / ".amplifier" / "sessions")
+    projects_dir: Path = Field(
+        default_factory=lambda: Path.home() / ".amplifier" / "projects"
+    )
     log_level: str = "info"
     disabled_plugins: list[str] = Field(default_factory=list)
     bundles: dict[str, str] = Field(default_factory=lambda: dict(WELL_KNOWN_BUNDLES))
@@ -74,6 +85,11 @@ class DaemonSettings(BaseSettings):
     def daemon_run_dir(self) -> Path:
         """Per-daemon-run log directory: ``{home_dir}/sessions/``."""
         return self.home_dir / "sessions"
+
+    @property
+    def daemon_logs_dir(self) -> Path:
+        """Daemon-level log directory: ``{home_dir}/logs/``."""
+        return self.home_dir / "logs"
 
     @property
     def plugins_dir(self) -> Path:

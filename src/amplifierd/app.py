@@ -80,12 +80,11 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         logger.warning("Failed to create BundleRegistry; starting without it", exc_info=True)
         app.state.bundle_registry = None
 
-    sessions_dir = settings.sessions_dir
     app.state.session_manager = SessionManager(
         event_bus=app.state.event_bus,
         settings=settings,
         bundle_registry=app.state.bundle_registry,
-        sessions_dir=sessions_dir,
+        projects_dir=settings.projects_dir,
     )
 
     # Plugin discovery — resilient

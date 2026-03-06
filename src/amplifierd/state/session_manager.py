@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from amplifierd.config import DaemonSettings
+from amplifierd.config import DaemonSettings, cwd_to_slug
 from amplifierd.state.event_bus import EventBus
 from amplifierd.state.session_handle import SessionHandle
 from amplifierd.state.session_index import SessionIndex, SessionIndexEntry
@@ -33,23 +33,27 @@ class SessionManager:
         event_bus: EventBus,
         settings: DaemonSettings,
         bundle_registry: Any = None,
+        projects_dir: Path | None = None,
+        # Backward-compat alias: callers that still pass sessions_dir= are
+        # transparently redirected to projects_dir.
         sessions_dir: Path | None = None,
     ) -> None:
         self._sessions: dict[str, SessionHandle] = {}
         self._event_bus = event_bus
         self._settings = settings
         self._bundle_registry = bundle_registry
-        self._sessions_dir = sessions_dir
+        # Prefer the explicit projects_dir; fall back to the legacy alias.
+        self._projects_dir: Path | None = projects_dir or sessions_dir
         self._index: SessionIndex | None = None
-        if sessions_dir:
-            index_path = sessions_dir / "index.json"
+        if self._projects_dir:
+            index_path = self._projects_dir / "index.json"
             if index_path.exists():
                 try:
                     self._index = SessionIndex.load(index_path)
                 except Exception:
-                    self._index = SessionIndex.rebuild(sessions_dir)
+                    self._index = SessionIndex.rebuild(self._projects_dir)
             else:
-                self._index = SessionIndex.rebuild(sessions_dir)
+                self._index = SessionIndex.rebuild(self._projects_dir)
 
     @property
     def event_bus(self) -> EventBus:
@@ -60,8 +64,15 @@ class SessionManager:
         return self._settings
 
     @property
+    def projects_dir(self) -> Path | None:
+        """Root directory for all projects: ``~/.amplifier/projects/``."""
+        return self._projects_dir
+
+    # Backward-compat alias used by older routes / tests
+    @property
     def sessions_dir(self) -> Path | None:
-        return self._sessions_dir
+        """Deprecated: use ``projects_dir`` instead."""
+        return self._projects_dir
 
     def resolve_working_dir(self, request_working_dir: str | None) -> str:
         """Resolve working directory using the fallback chain:
@@ -78,6 +89,41 @@ class SessionManager:
             return str(self._settings.default_working_dir)
         return str(Path.home())
 
+    def _find_session_dir(self, session_id: str) -> Path | None:
+        """Find a session directory by scanning all projects.
+
+        Search order:
+        1. Index entry with a known project_id (fast path).
+        2. Full directory scan of all projects (fallback).
+        """
+        if not self._projects_dir:
+            return None
+
+        # Fast path via index
+        if self._index:
+            entry = self._index.get(session_id)
+            if entry and entry.project_id:
+                candidate = (
+                    self._projects_dir / entry.project_id / "sessions" / session_id
+                )
+                if candidate.exists():
+                    return candidate
+
+        # Fallback: scan all project directories
+        if not self._projects_dir.exists():
+            return None
+        for project_dir in self._projects_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            candidate = project_dir / "sessions" / session_id
+            if candidate.exists():
+                return candidate
+        return None
+
+    def resolve_session_dir(self, session_id: str) -> Path | None:
+        """Public helper for routes: find the on-disk directory for *session_id*."""
+        return self._find_session_dir(session_id)
+
     def register(
         self,
         *,
@@ -85,6 +131,7 @@ class SessionManager:
         prepared_bundle: Any | None,  # PreparedBundle
         bundle_name: str,
         working_dir: str | None = None,
+        project_id: str = "",
     ) -> SessionHandle:
         """Register a pre-created session and wrap it in a SessionHandle."""
         session_id: str = session.session_id
@@ -109,6 +156,7 @@ class SessionManager:
                     created_at=handle.created_at.isoformat(),
                     last_activity=handle.last_activity.isoformat(),
                     parent_session_id=getattr(session, "parent_id", None),
+                    project_id=project_id,
                 )
             )
             self._index.save()
@@ -204,10 +252,13 @@ class SessionManager:
         session = await prepared.create_session()
 
         # Register transcript/metadata persistence hooks
-        if self._sessions_dir:
+        if self._projects_dir:
             from amplifierd.persistence import register_persistence_hooks
 
-            session_dir = self._sessions_dir / session.session_id
+            slug = cwd_to_slug(wd)
+            project_dir = self._projects_dir / slug
+            sessions_subdir = project_dir / "sessions"
+            session_dir = sessions_subdir / session.session_id
             session_dir.mkdir(parents=True, exist_ok=True)
             info_path = session_dir / "session-info.json"
             if not info_path.exists():
@@ -222,6 +273,8 @@ class SessionManager:
                     "working_dir": str(wd),
                 },
             )
+        else:
+            slug = ""
 
         # Register spawn capability so delegate tool can spawn sub-sessions
         try:
@@ -236,16 +289,16 @@ class SessionManager:
             prepared_bundle=prepared,
             bundle_name=bundle_name or bundle_uri or "unknown",
             working_dir=wd,
+            project_id=slug,
         )
         return handle
 
     async def resume(self, session_id: str) -> SessionHandle:
         """Resume a session from disk after server restart.
 
-        Loads the transcript from ``{sessions_dir}/{session_id}/transcript.jsonl``,
-        handles orphaned tool calls, creates a fresh session with
-        ``is_resumed=True``, and injects the transcript into the new
-        session's context.
+        Loads the transcript from the session directory, handles orphaned tool
+        calls, creates a fresh session with ``is_resumed=True``, and injects
+        the transcript into the new session's context.
 
         Args:
             session_id: ID of the session to resume.
@@ -254,7 +307,7 @@ class SessionManager:
             The resumed SessionHandle.
 
         Raises:
-            ValueError: If sessions_dir is not configured.
+            ValueError: If projects_dir is not configured.
             RuntimeError: If BundleRegistry is not available.
             FileNotFoundError: If session directory or transcript not found.
         """
@@ -263,13 +316,13 @@ class SessionManager:
         if existing is not None:
             return existing
 
-        if not self._sessions_dir:
-            raise ValueError("Session persistence not configured (sessions_dir is None)")
+        if not self._projects_dir:
+            raise ValueError("Session persistence not configured (projects_dir is None)")
         if not self._bundle_registry:
             raise RuntimeError("BundleRegistry not available")
 
-        session_dir = self._sessions_dir / session_id
-        if not session_dir.exists():
+        session_dir = self._find_session_dir(session_id)
+        if session_dir is None or not session_dir.exists():
             raise FileNotFoundError(f"No session directory for {session_id}")
 
         # 1. Load transcript from disk (offload sync I/O to thread)
@@ -345,12 +398,16 @@ class SessionManager:
         except (ImportError, Exception):  # noqa: BLE001
             logger.debug("Spawn capability registration skipped", exc_info=True)
 
+        # Determine project_id for index entry
+        project_id = session_dir.parent.parent.name if session_dir.parent.name == "sessions" else ""
+
         # 8. Register in SessionManager
         handle = self.register(
             session=session,
             prepared_bundle=prepared,
             bundle_name=bundle_name,
             working_dir=working_dir,
+            project_id=project_id,
         )
         logger.info(
             "Session %s resumed (%d messages restored)",

@@ -22,11 +22,11 @@ def client(tmp_path: Path) -> Generator[TestClient]:
     """Create a test client with an isolated session_manager."""
     app = create_app()
     with TestClient(app) as c:
-        # Override AFTER lifespan so the real sessions_dir is not scanned
+        # Override AFTER lifespan so the real projects_dir is not scanned
         event_bus = EventBus()
-        settings = DaemonSettings(sessions_dir=tmp_path / "sessions")
+        settings = DaemonSettings(projects_dir=tmp_path / "projects")
         c.app.state.session_manager = SessionManager(  # type: ignore[union-attr]
-            event_bus=event_bus, settings=settings, sessions_dir=tmp_path / "sessions"
+            event_bus=event_bus, settings=settings, projects_dir=tmp_path / "projects"
         )
         yield c
 
@@ -290,10 +290,10 @@ class TestSessionPatchNameEndpoint:
     ) -> None:
         """PATCH with name writes name to metadata.json in session dir."""
         manager = client.app.state.session_manager
-        sessions_dir = manager.sessions_dir
+        projects_dir = manager.projects_dir
         _register_handle(client, "sess-meta")
-        # Pre-create the session dir so write_metadata can find it
-        session_dir = sessions_dir / "sess-meta"
+        # Pre-create the nested session dir so resolve_session_dir can find it
+        session_dir = projects_dir / "-home-user-testproj" / "sessions" / "sess-meta"
         session_dir.mkdir(parents=True, exist_ok=True)
 
         resp = client.patch("/sessions/sess-meta", json={"name": "Renamed Session"})
@@ -343,17 +343,17 @@ class TestSessionPatchNameEndpoint:
     def test_patch_name_no_sessions_dir_still_emits_event(
         self, client: TestClient
     ) -> None:
-        """PATCH with name emits event even when sessions_dir is not configured."""
+        """PATCH with name emits event even when projects_dir is not configured."""
         import asyncio
         from amplifierd.state.session_manager import SessionManager
         from amplifierd.state.event_bus import EventBus
         from amplifierd.config import DaemonSettings
 
-        # Replace manager with one that has sessions_dir=None
+        # Replace manager with one that has projects_dir=None
         event_bus = EventBus()
         settings = DaemonSettings()
         no_persist_manager = SessionManager(
-            event_bus=event_bus, settings=settings, sessions_dir=None
+            event_bus=event_bus, settings=settings, projects_dir=None
         )
         client.app.state.session_manager = no_persist_manager
         client.app.state.event_bus = event_bus
