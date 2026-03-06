@@ -30,6 +30,23 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings: DaemonSettings = getattr(app.state, "settings", DaemonSettings())
     app.state.settings = settings
 
+    # Daemon session path (created by cli.py before uvicorn starts; read via pydantic-settings)
+    app.state.daemon_session_path = settings.daemon_session_path
+
+    # Wire up session log in worker process (needed for --reload where worker is a fresh process)
+    if app.state.daemon_session_path and app.state.daemon_session_path.exists():
+        import sys
+
+        from amplifierd.daemon_session import _TeeWriter, setup_session_log
+
+        if not isinstance(sys.stdout, _TeeWriter):
+            setup_session_log(app.state.daemon_session_path)
+
+    if app.state.daemon_session_path:
+        from amplifierd.daemon_session import update_session_meta
+
+        update_session_meta(app.state.daemon_session_path, {"status": "running"})
+
     app.state.event_bus = EventBus()
 
     # BundleRegistry — resilient: catches all exceptions, starts without registry
@@ -72,6 +89,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
 
     # Plugin discovery — resilient
+    plugin_names: list[str] = []
     try:
         plugins = discover_plugins(
             disabled=settings.disabled_plugins,
@@ -79,13 +97,33 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         )
         for name, router in plugins:
             app.include_router(router)
+            plugin_names.append(name)
             logger.info("Mounted plugin: %s", name)
     except Exception:
         logger.warning("Plugin discovery failed; starting without plugins")
 
+    # Update daemon session meta.json with discovered plugins
+    if app.state.daemon_session_path and plugin_names:
+        from amplifierd.daemon_session import update_session_meta
+
+        update_session_meta(app.state.daemon_session_path, {"plugins": plugin_names})
+
     yield
 
     # --- Shutdown ---
+    if app.state.daemon_session_path:
+        from datetime import UTC, datetime
+
+        from amplifierd.daemon_session import update_session_meta
+
+        update_session_meta(
+            app.state.daemon_session_path,
+            {
+                "status": "stopped",
+                "end_time": datetime.now(tz=UTC).isoformat(),
+            },
+        )
+
     await app.state.session_manager.shutdown()
 
 

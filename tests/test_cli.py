@@ -11,6 +11,14 @@ from click.testing import CliRunner, Result
 from amplifierd.cli import main
 
 
+@pytest.fixture(autouse=True)
+def _restore_root_handlers():
+    """Restore root logger handlers after each test to prevent handler leakage."""
+    original_handlers = logging.getLogger().handlers[:]
+    yield
+    logging.getLogger().handlers = original_handlers
+
+
 class TestServeHelp:
     """CliRunner invoke of main with ['serve', '--help'] should exit 0
     and output should contain '--port', '--host', '--reload'."""
@@ -53,6 +61,8 @@ class TestServeDefaults:
         with (
             patch("uvicorn.run") as mock_run,
             patch("amplifierd.config.DaemonSettings", return_value=mock_settings),
+            patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
+            patch("amplifierd.daemon_session.setup_session_log"),
         ):
             result = runner.invoke(main, ["serve"])
 
@@ -80,6 +90,8 @@ class TestServeCLIOverrides:
         with (
             patch("uvicorn.run") as mock_run,
             patch("amplifierd.config.DaemonSettings", return_value=mock_settings),
+            patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
+            patch("amplifierd.daemon_session.setup_session_log"),
         ):
             result = runner.invoke(
                 main, ["serve", "--host", "0.0.0.0", "--port", "9000", "--log-level", "debug"]
@@ -105,6 +117,8 @@ class TestServeCLIOverrides:
         with (
             patch("uvicorn.run") as mock_run,
             patch("amplifierd.config.DaemonSettings", return_value=mock_settings),
+            patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
+            patch("amplifierd.daemon_session.setup_session_log"),
         ):
             result = runner.invoke(main, ["serve", "--reload"])
 
@@ -134,6 +148,8 @@ class TestServeLogging:
             patch("uvicorn.run"),
             patch("amplifierd.config.DaemonSettings", return_value=mock_settings),
             patch("logging.basicConfig") as mock_basic_config,
+            patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
+            patch("amplifierd.daemon_session.setup_session_log"),
         ):
             result = runner.invoke(main, ["serve"])
 
@@ -154,6 +170,8 @@ class TestServeLogging:
             patch("uvicorn.run"),
             patch("amplifierd.config.DaemonSettings", return_value=mock_settings),
             patch("logging.basicConfig") as mock_basic_config,
+            patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
+            patch("amplifierd.daemon_session.setup_session_log"),
         ):
             result = runner.invoke(main, ["serve"])
 
@@ -173,6 +191,8 @@ class TestServeLogging:
             patch("uvicorn.run"),
             patch("amplifierd.config.DaemonSettings", return_value=mock_settings),
             patch("logging.basicConfig") as mock_basic_config,
+            patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
+            patch("amplifierd.daemon_session.setup_session_log"),
         ):
             result = runner.invoke(main, ["serve", "--log-level", "debug"])
 
