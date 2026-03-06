@@ -211,12 +211,22 @@ async def patch_session(
     if body.working_dir is not None:
         metadata_updates["working_dir"] = body.working_dir
 
-    if metadata_updates and manager.sessions_dir:
-        session_dir = manager.sessions_dir / session_id
-        if session_dir.exists():
+    if metadata_updates:
+        session_dir = manager.resolve_session_dir(session_id)
+        if session_dir is not None:
             from amplifierd.persistence import write_metadata
 
             write_metadata(session_dir, metadata_updates)
+
+    # Publish session_renamed event if name changed
+    if body.name is not None and handle is not None:
+        event_bus = getattr(request.app.state, "event_bus", None)
+        if event_bus is not None:
+            event_bus.publish(
+                session_id=session_id,
+                event_name="session_renamed",
+                data={"session_id": session_id, "name": body.name},
+            )
 
     if handle is not None:
         summary = _summarize(handle)
@@ -226,7 +236,7 @@ async def patch_session(
         ).model_dump(exclude_none=True)
 
     # Disk-only session — return minimal response
-    if manager.sessions_dir and (manager.sessions_dir / session_id).exists():
+    if manager.resolve_session_dir(session_id) is not None:
         return {"session_id": session_id, "updated": True}
 
     detail = ProblemDetail(
@@ -482,17 +492,19 @@ async def list_forks(request: Request, session_id: str) -> dict[str, Any]:
 async def get_transcript(request: Request, session_id: str) -> dict:
     """Load conversation transcript for a session from transcript.jsonl."""
     manager: SessionManager = request.app.state.session_manager
-    sessions_dir = manager.sessions_dir
-    if not sessions_dir:
+
+    session_dir = manager.resolve_session_dir(session_id)
+    if session_dir is None:
         detail = ProblemDetail(
             type=ErrorTypeURI.SESSION_NOT_FOUND,
             title="Session Not Found",
             status=404,
-            detail="Session persistence not configured",
+            detail=f"No transcript for session '{session_id}'",
             instance=str(request.url.path),
         )
         raise HTTPException(status_code=404, detail=detail.model_dump(exclude_none=True))
-    transcript_path = sessions_dir / session_id / "transcript.jsonl"
+
+    transcript_path = session_dir / "transcript.jsonl"
     if not transcript_path.exists():
         detail = ProblemDetail(
             type=ErrorTypeURI.SESSION_NOT_FOUND,
@@ -720,13 +732,12 @@ async def update_metadata(request: Request, session_id: str, body: dict) -> dict
     """Update metadata for a session (active or inactive on disk)."""
     manager: SessionManager = request.app.state.session_manager
 
-    if manager.sessions_dir:
-        session_dir = manager.sessions_dir / session_id
-        if session_dir.exists():
-            from amplifierd.persistence import write_metadata
+    session_dir = manager.resolve_session_dir(session_id)
+    if session_dir is not None:
+        from amplifierd.persistence import write_metadata
 
-            write_metadata(session_dir, body)
-            return {"updated": True, "session_id": session_id}
+        write_metadata(session_dir, body)
+        return {"updated": True, "session_id": session_id}
 
     detail = ProblemDetail(
         type=ErrorTypeURI.SESSION_NOT_FOUND,

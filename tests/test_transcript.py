@@ -12,35 +12,43 @@ from fastapi.testclient import TestClient
 from amplifierd.app import create_app
 from amplifierd.state.session_manager import SessionManager
 
+_TEST_SLUG = "-home-user-testproject"
+
 
 @pytest.fixture()
-def sessions_dir(tmp_path: Path) -> Path:
-    """Create a temporary sessions directory."""
-    d = tmp_path / "sessions"
+def projects_dir(tmp_path: Path) -> Path:
+    """Create a temporary projects directory."""
+    d = tmp_path / "projects"
     d.mkdir(parents=True)
     return d
 
 
-@pytest.fixture()
-def client(sessions_dir: Path) -> Generator[TestClient]:
-    """Test client with SessionManager configured with a sessions_dir.
+def _session_dir(projects_dir: Path, session_id: str) -> Path:
+    """Return the nested session directory path and ensure it exists."""
+    sdir = projects_dir / _TEST_SLUG / "sessions" / session_id
+    sdir.mkdir(parents=True, exist_ok=True)
+    return sdir
 
-    We patch sessions_dir onto the manager *after* lifespan runs (inside the
+
+@pytest.fixture()
+def client(projects_dir: Path) -> Generator[TestClient]:
+    """Test client with SessionManager configured with a projects_dir.
+
+    We patch _projects_dir onto the manager *after* lifespan runs (inside the
     context manager), so the lifespan's own SessionManager setup doesn't
-    overwrite our value.  Same pattern as test_session_creation.py.
+    overwrite our value.
     """
     app = create_app()
     with TestClient(app) as c:
         manager: SessionManager = c.app.state.session_manager  # type: ignore[union-attr]
-        manager._sessions_dir = sessions_dir  # noqa: SLF001
+        manager._projects_dir = projects_dir  # noqa: SLF001
         yield c
 
 
-def test_get_transcript_returns_messages(client: TestClient, sessions_dir: Path) -> None:
+def test_get_transcript_returns_messages(client: TestClient, projects_dir: Path) -> None:
     """GET /sessions/{id}/transcript reads messages from transcript.jsonl."""
     sid = "test-session-123"
-    sdir = sessions_dir / sid
-    sdir.mkdir(parents=True)
+    sdir = _session_dir(projects_dir, sid)
     transcript = sdir / "transcript.jsonl"
     transcript.write_text(
         json.dumps({"role": "user", "content": "hello"})
@@ -70,11 +78,10 @@ def test_get_transcript_missing_session(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
-def test_get_transcript_skips_malformed_lines(client: TestClient, sessions_dir: Path) -> None:
+def test_get_transcript_skips_malformed_lines(client: TestClient, projects_dir: Path) -> None:
     """GET /sessions/{id}/transcript skips lines that are not valid JSON."""
     sid = "session-malformed"
-    sdir = sessions_dir / sid
-    sdir.mkdir(parents=True)
+    sdir = _session_dir(projects_dir, sid)
     transcript = sdir / "transcript.jsonl"
     transcript.write_text(
         json.dumps({"role": "user", "content": "hello"})
@@ -91,11 +98,10 @@ def test_get_transcript_skips_malformed_lines(client: TestClient, sessions_dir: 
     assert len(data["messages"]) == 2
 
 
-def test_get_transcript_empty_file(client: TestClient, sessions_dir: Path) -> None:
+def test_get_transcript_empty_file(client: TestClient, projects_dir: Path) -> None:
     """GET /sessions/{id}/transcript returns empty messages for empty transcript."""
     sid = "session-empty"
-    sdir = sessions_dir / sid
-    sdir.mkdir(parents=True)
+    sdir = _session_dir(projects_dir, sid)
     (sdir / "transcript.jsonl").write_text("")
 
     resp = client.get(f"/sessions/{sid}/transcript")

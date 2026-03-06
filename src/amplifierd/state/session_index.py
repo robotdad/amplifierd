@@ -18,6 +18,7 @@ class SessionIndexEntry:
     created_at: str
     last_activity: str
     parent_session_id: str | None = None
+    project_id: str = ""
 
 
 _ENTRY_FIELDS = {f.name for f in dc_fields(SessionIndexEntry)}
@@ -65,35 +66,47 @@ class SessionIndex:
         try:
             data = json.loads(path.read_text())
             for item in data:
+                # Tolerate old entries that pre-date project_id field
+                item.setdefault("project_id", "")
                 index._entries[item["session_id"]] = SessionIndexEntry(**item)
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             logger.warning("Session index corrupted at %s, starting empty", path)
         return index
 
     @classmethod
-    def rebuild(cls, sessions_dir: Path) -> SessionIndex:
-        index_path = sessions_dir / "index.json"
+    def rebuild(cls, projects_dir: Path) -> SessionIndex:
+        """Rebuild index by walking projects_dir/<project>/ sessions/<session>/ layout."""
+        index_path = projects_dir / "index.json"
         index = cls(index_path)
-        if not sessions_dir.exists():
+        if not projects_dir.exists():
             return index
-        for sdir in sessions_dir.iterdir():
-            if not sdir.is_dir():
+        for project_dir in projects_dir.iterdir():
+            if not project_dir.is_dir():
                 continue
-            meta_path = sdir / "metadata.json"
-            if not meta_path.exists():
+            sessions_subdir = project_dir / "sessions"
+            if not sessions_subdir.is_dir():
                 continue
-            try:
-                meta = json.loads(meta_path.read_text())
-                index.add(
-                    SessionIndexEntry(
-                        session_id=sdir.name,
-                        status=meta.get("status", "completed"),
-                        bundle=meta.get("bundle", "unknown"),
-                        created_at=meta.get("created_at", ""),
-                        last_activity=meta.get("last_activity", meta.get("created_at", "")),
-                        parent_session_id=meta.get("parent_session_id"),
+            for session_dir in sessions_subdir.iterdir():
+                if not session_dir.is_dir():
+                    continue
+                meta_path = session_dir / "metadata.json"
+                if not meta_path.exists():
+                    continue
+                try:
+                    meta = json.loads(meta_path.read_text())
+                    index.add(
+                        SessionIndexEntry(
+                            session_id=session_dir.name,
+                            status=meta.get("status", "completed"),
+                            bundle=meta.get("bundle", "unknown"),
+                            created_at=meta.get("created_at", ""),
+                            last_activity=meta.get(
+                                "last_activity", meta.get("created_at", "")
+                            ),
+                            parent_session_id=meta.get("parent_session_id"),
+                            project_id=project_dir.name,
+                        )
                     )
-                )
-            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-                logger.warning("Skipping unreadable session dir: %s", sdir)
+                except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                    logger.warning("Skipping unreadable session dir: %s", session_dir)
         return index
