@@ -76,11 +76,6 @@ class DaemonSettings(BaseSettings):
         return self.home_dir / "sessions"
 
     @property
-    def daemon_logs_dir(self) -> Path:
-        """Daemon-level log directory: ``{home_dir}/logs/``."""
-        return self.home_dir / "logs"
-
-    @property
     def plugins_dir(self) -> Path:
         """Plugin data directory: ``{home_dir}/plugins/``."""
         return self.home_dir / "plugins"

@@ -63,7 +63,6 @@ class TestServeDefaults:
             patch("amplifierd.config.DaemonSettings", return_value=mock_settings),
             patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
             patch("amplifierd.daemon_session.setup_session_log"),
-            patch("logging.handlers.RotatingFileHandler"),
         ):
             result = runner.invoke(main, ["serve"])
 
@@ -93,7 +92,6 @@ class TestServeCLIOverrides:
             patch("amplifierd.config.DaemonSettings", return_value=mock_settings),
             patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
             patch("amplifierd.daemon_session.setup_session_log"),
-            patch("logging.handlers.RotatingFileHandler"),
         ):
             result = runner.invoke(
                 main, ["serve", "--host", "0.0.0.0", "--port", "9000", "--log-level", "debug"]
@@ -121,7 +119,6 @@ class TestServeCLIOverrides:
             patch("amplifierd.config.DaemonSettings", return_value=mock_settings),
             patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
             patch("amplifierd.daemon_session.setup_session_log"),
-            patch("logging.handlers.RotatingFileHandler"),
         ):
             result = runner.invoke(main, ["serve", "--reload"])
 
@@ -153,7 +150,6 @@ class TestServeLogging:
             patch("logging.basicConfig") as mock_basic_config,
             patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
             patch("amplifierd.daemon_session.setup_session_log"),
-            patch("logging.handlers.RotatingFileHandler"),
         ):
             result = runner.invoke(main, ["serve"])
 
@@ -176,7 +172,6 @@ class TestServeLogging:
             patch("logging.basicConfig") as mock_basic_config,
             patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
             patch("amplifierd.daemon_session.setup_session_log"),
-            patch("logging.handlers.RotatingFileHandler"),
         ):
             result = runner.invoke(main, ["serve"])
 
@@ -198,7 +193,6 @@ class TestServeLogging:
             patch("logging.basicConfig") as mock_basic_config,
             patch("amplifierd.daemon_session.create_session_dir", return_value=MagicMock()),
             patch("amplifierd.daemon_session.setup_session_log"),
-            patch("logging.handlers.RotatingFileHandler"),
         ):
             result = runner.invoke(main, ["serve", "--log-level", "debug"])
 
