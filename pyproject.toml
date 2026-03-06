@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "amplifierd"
+version = "0.1.0"
+description = "Amplifier daemon - HTTP server for the Amplifier agent framework"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "sse-starlette>=2.2.1",
+    "click>=8.1.0",
+    "pyyaml>=6.0",
+    "amplifier-core @ git+https://github.com/microsoft/amplifier-core",
+    "amplifier-foundation @ git+https://github.com/microsoft/amplifier-foundation",
+]
+
+[project.scripts]
+amplifierd = "amplifierd.cli:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/amplifierd"]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=6.1.1",
+    "pyright>=1.1.407",
+    "ruff>=0.11.10",
+]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+    "smoke: smoke tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

@@ -1,0 +1,102 @@
+"""CLI entry point for amplifierd."""
+
+from __future__ import annotations
+
+import logging
+
+import click
+
+_LOG_LEVELS: dict[str, int] = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+}
+
+
+@click.group()
+def main() -> None:
+    """amplifierd – Amplifier daemon HTTP server."""
+
+
+@main.command()
+@click.option("--host", default=None, type=str, help="Bind host address.")
+@click.option("--port", default=None, type=int, help="Bind port number.")
+@click.option("--reload", is_flag=True, default=False, help="Enable hot-reload for development.")
+@click.option(
+    "--log-level",
+    default=None,
+    type=click.Choice(["debug", "info", "warning", "error"], case_sensitive=False),
+    help="Log level (overrides AMPLIFIERD_LOG_LEVEL).",
+)
+@click.option(
+    "--bundle",
+    "-b",
+    multiple=True,
+    help="Register a bundle as NAME=URI (repeatable).",
+)
+@click.option(
+    "--default-bundle",
+    default=None,
+    type=str,
+    help="Default bundle name for sessions created without one.",
+)
+def serve(
+    host: str | None,
+    port: int | None,
+    reload: bool,
+    log_level: str | None,
+    bundle: tuple[str, ...],
+    default_bundle: str | None,
+) -> None:
+    """Start the amplifierd HTTP server."""
+    import json
+    import os
+
+    import uvicorn
+
+    from amplifierd.config import DaemonSettings
+
+    # Push CLI bundle overrides into env so DaemonSettings in the lifespan picks them up
+    if bundle:
+        parsed: dict[str, str] = {}
+        for b in bundle:
+            if "=" not in b:
+                raise click.BadParameter(f"Expected NAME=URI, got: {b}", param_hint="--bundle")
+            name, uri = b.split("=", 1)
+            parsed[name] = uri
+        existing = json.loads(os.environ.get("AMPLIFIERD_BUNDLES", "{}"))
+        existing.update(parsed)
+        os.environ["AMPLIFIERD_BUNDLES"] = json.dumps(existing)
+
+    if default_bundle is not None:
+        os.environ["AMPLIFIERD_DEFAULT_BUNDLE"] = default_bundle
+
+    settings = DaemonSettings()
+
+    effective_host = host if host is not None else settings.host
+    effective_port = port if port is not None else settings.port
+    effective_log_level = log_level if log_level is not None else settings.log_level
+
+    logging.basicConfig(
+        level=_LOG_LEVELS.get(effective_log_level.lower(), logging.INFO),
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+
+    click.echo(
+        f"amplifierd starting – host={effective_host} port={effective_port} "
+        f"log-level={effective_log_level}"
+    )
+
+    uvicorn.run(
+        "amplifierd.app:create_app",
+        host=effective_host,
+        port=effective_port,
+        reload=reload,
+        log_level=effective_log_level,
+        factory=True,
+    )
+
+
+if __name__ == "__main__":
+    main()

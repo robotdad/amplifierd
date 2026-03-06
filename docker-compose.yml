@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  amplifierd:
+    build: .
+    ports:
+      - "8410:8410"
+    volumes:
+      - ~/.amplifier:/root/.amplifier
+      - ~/.amplifierd:/root/.amplifierd
+    environment:
+      - AMPLIFIERD_LOG_LEVEL=info
+    restart: unless-stopped

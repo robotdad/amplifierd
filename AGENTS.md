@@ -1,0 +1,3 @@
+- @README.md
+- @docs/api-usage.md
+- @docs/plugins.md
