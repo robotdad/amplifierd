@@ -106,9 +106,7 @@ class TestDaemonSettings:
         from amplifierd.config import DaemonSettings
 
         settings_file = tmp_path / "settings.json"
-        settings_file.write_text(
-            json.dumps({"bundles": {"custom": "file:///tmp/mybundle"}})
-        )
+        settings_file.write_text(json.dumps({"bundles": {"custom": "file:///tmp/mybundle"}}))
         settings = DaemonSettings(_settings_dir=tmp_path)
         assert settings.bundles == {"custom": "file:///tmp/mybundle"}
 
@@ -130,3 +128,54 @@ class TestDaemonSettings:
         monkeypatch.setenv("AMPLIFIERD_DEFAULT_BUNDLE", "foundation")
         settings = DaemonSettings(_settings_dir=tmp_path)
         assert settings.default_bundle == "foundation"
+
+    def test_allowed_origins_defaults_to_wildcard(self, tmp_path: Path):
+        """allowed_origins defaults to ['*'] (permit all)."""
+        from amplifierd.config import DaemonSettings
+
+        settings = DaemonSettings(_settings_dir=tmp_path)
+        assert settings.allowed_origins == ["*"]
+
+    def test_api_key_defaults_to_none(self, tmp_path: Path):
+        """api_key defaults to None (no auth)."""
+        from amplifierd.config import DaemonSettings
+
+        settings = DaemonSettings(_settings_dir=tmp_path)
+        assert settings.api_key is None
+
+    def test_allowed_origins_from_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """AMPLIFIERD_ALLOWED_ORIGINS env var overrides default."""
+        from amplifierd.config import DaemonSettings
+
+        monkeypatch.setenv(
+            "AMPLIFIERD_ALLOWED_ORIGINS",
+            '["http://localhost:3000","https://my.host"]',
+        )
+        settings = DaemonSettings(_settings_dir=tmp_path)
+        assert settings.allowed_origins == ["http://localhost:3000", "https://my.host"]
+
+    def test_api_key_from_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """AMPLIFIERD_API_KEY env var sets the api_key."""
+        from amplifierd.config import DaemonSettings
+
+        monkeypatch.setenv("AMPLIFIERD_API_KEY", "my-secret-key")
+        settings = DaemonSettings(_settings_dir=tmp_path)
+        assert settings.api_key == "my-secret-key"
+
+    def test_allowed_origins_from_json(self, tmp_path: Path):
+        """allowed_origins can be set from settings.json."""
+        from amplifierd.config import DaemonSettings
+
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps({"allowed_origins": ["https://example.com"]}))
+        settings = DaemonSettings(_settings_dir=tmp_path)
+        assert settings.allowed_origins == ["https://example.com"]
+
+    def test_api_key_from_json(self, tmp_path: Path):
+        """api_key can be set from settings.json."""
+        from amplifierd.config import DaemonSettings
+
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps({"api_key": "json-secret"}))
+        settings = DaemonSettings(_settings_dir=tmp_path)
+        assert settings.api_key == "json-secret"

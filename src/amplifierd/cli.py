@@ -41,6 +41,12 @@ def main() -> None:
     type=str,
     help="Default bundle name for sessions created without one.",
 )
+@click.option(
+    "--api-key",
+    default=None,
+    type=str,
+    help="Require API key for non-localhost requests.",
+)
 def serve(
     host: str | None,
     port: int | None,
@@ -48,6 +54,7 @@ def serve(
     log_level: str | None,
     bundle: tuple[str, ...],
     default_bundle: str | None,
+    api_key: str | None,
 ) -> None:
     """Start the amplifierd HTTP server."""
     import json
@@ -71,6 +78,9 @@ def serve(
 
     if default_bundle is not None:
         os.environ["AMPLIFIERD_DEFAULT_BUNDLE"] = default_bundle
+
+    if api_key is not None:
+        os.environ["AMPLIFIERD_API_KEY"] = api_key
 
     settings = DaemonSettings()
 

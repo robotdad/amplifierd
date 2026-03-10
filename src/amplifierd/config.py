@@ -74,6 +74,10 @@ class DaemonSettings(BaseSettings):
     default_bundle: str | None = "distro"
     daemon_session_path: Path | None = None
 
+    # Security — opt-in, defaults preserve current localhost-only behavior
+    allowed_origins: list[str] = Field(default_factory=lambda: ["*"])
+    api_key: str | None = None
+
     # Class-level storage for settings_dir (used by settings_customise_sources).
     # Not thread-safe: concurrent construction would race on this value.
     # Acceptable — this runs once at daemon startup, not on a hot path.
