@@ -43,11 +43,6 @@ dev = [
 [tool.pyright]
 typeCheckingMode = "basic"
 pythonVersion = "3.12"
-include = ["src", "tests"]
-executionEnvironments = [
-    { root = "src" },
-    { root = "tests", extraPaths = ["src"] }
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

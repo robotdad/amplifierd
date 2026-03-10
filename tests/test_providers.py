@@ -107,14 +107,12 @@ class TestExpandEnvVars:
         monkeypatch.setenv("GOOD_KEY", "value")
         monkeypatch.setenv("EMPTY_KEY", "")
         monkeypatch.delenv("MISSING_KEY", raising=False)
-        result = expand_env_vars(
-            {
-                "good": "${GOOD_KEY}",
-                "empty": "${EMPTY_KEY}",
-                "missing": "${MISSING_KEY}",
-                "literal": "keep",
-            }
-        )
+        result = expand_env_vars({
+            "good": "${GOOD_KEY}",
+            "empty": "${EMPTY_KEY}",
+            "missing": "${MISSING_KEY}",
+            "literal": "keep",
+        })
         assert result == {"good": "value", "literal": "keep"}
 
     def test_non_string_passthrough(self) -> None:
@@ -173,10 +171,7 @@ class TestMergeProviderItem:
     def test_deep_merges_config(self) -> None:
         from amplifierd.providers import _merge_provider_item
 
-        bundle = {
-            "module": "provider-anthropic",
-            "config": {"default_model": "claude-sonnet-4-6", "debug": True},
-        }
+        bundle = {"module": "provider-anthropic", "config": {"default_model": "claude-sonnet-4-6", "debug": True}}
         settings = {"module": "provider-anthropic", "config": {"api_key": "${ANTHROPIC_API_KEY}"}}
         result = _merge_provider_item(bundle, settings)
         assert result["config"] == {
@@ -253,27 +248,19 @@ class TestInjectProviders:
         assert bundle.providers[0]["module"] == "existing-provider"
         assert bundle.providers[0]["config"]["key"] == "new"
 
-    def test_deep_merges_config_preserving_bundle_keys(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_deep_merges_config_preserving_bundle_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Bundle config keys survive when settings adds runtime keys."""
         from amplifierd.providers import inject_providers
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-        bundle = _make_bundle(
-            providers=[
-                {
-                    "module": "provider-anthropic",
-                    "config": {"default_model": "claude-sonnet-4-6", "debug": True},
-                }
-            ]
-        )
-        providers = [
-            {
-                "module": "provider-anthropic",
-                "config": {"api_key": "${ANTHROPIC_API_KEY}"},
-            }
-        ]
+        bundle = _make_bundle(providers=[{
+            "module": "provider-anthropic",
+            "config": {"default_model": "claude-sonnet-4-6", "debug": True},
+        }])
+        providers = [{
+            "module": "provider-anthropic",
+            "config": {"api_key": "${ANTHROPIC_API_KEY}"},
+        }]
         inject_providers(bundle, providers)
         assert len(bundle.providers) == 1
         cfg = bundle.providers[0]["config"]
@@ -281,27 +268,19 @@ class TestInjectProviders:
         assert cfg["debug"] is True
         assert cfg["api_key"] == "sk-test"
 
-    def test_env_expansion_after_merge_preserves_bundle_config(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_expansion_after_merge_preserves_bundle_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When env var is unset, bundle config survives (not clobbered by empty expansion)."""
         from amplifierd.providers import inject_providers
 
         monkeypatch.delenv("UNSET_KEY", raising=False)
-        bundle = _make_bundle(
-            providers=[
-                {
-                    "module": "provider-anthropic",
-                    "config": {"default_model": "claude-sonnet-4-6", "debug": True},
-                }
-            ]
-        )
-        providers = [
-            {
-                "module": "provider-anthropic",
-                "config": {"api_key": "${UNSET_KEY}"},
-            }
-        ]
+        bundle = _make_bundle(providers=[{
+            "module": "provider-anthropic",
+            "config": {"default_model": "claude-sonnet-4-6", "debug": True},
+        }])
+        providers = [{
+            "module": "provider-anthropic",
+            "config": {"api_key": "${UNSET_KEY}"},
+        }]
         inject_providers(bundle, providers)
         cfg = bundle.providers[0]["config"]
         # api_key expands to "" and gets stripped, but bundle keys survive
@@ -383,62 +362,3 @@ class TestMergeSettingsProviders:
         result = merge_settings_providers(existing, settings)
         assert result[0]["module"] == "b"
         assert result[1]["module"] == "a"
-
-    def test_merges_by_id_for_multi_instance_providers(self) -> None:
-        """When providers have the same module, they must be merged by id."""
-        from amplifierd.providers import merge_settings_providers
-
-        existing = [
-            {
-                "id": "openai-chat",
-                "module": "provider-openai",
-                "config": {"model": "gpt-4", "key": "old-key"},
-            },
-            {
-                "id": "xai-chat",
-                "module": "provider-openai",
-                "config": {"model": "grok", "key": "old-key"},
-            },
-        ]
-        settings = [
-            {
-                "id": "openai-chat",
-                "module": "provider-openai",
-                "config": {"key": "new-key-openai"},
-            },
-            {
-                "id": "xai-chat",
-                "module": "provider-openai",
-                "config": {"key": "new-key-xai"},
-            },
-        ]
-        result = merge_settings_providers(existing, settings)
-        assert len(result) == 2
-        assert result[0]["id"] == "openai-chat"
-        assert result[0]["config"]["key"] == "new-key-openai"
-        assert result[0]["config"]["model"] == "gpt-4"  # Preserved from bundle
-        assert result[1]["id"] == "xai-chat"
-        assert result[1]["config"]["key"] == "new-key-xai"
-        assert result[1]["config"]["model"] == "grok"  # Preserved from bundle
-
-    def test_merges_by_module_if_no_id(self) -> None:
-        """Falls back to module-based merging when no id is present."""
-        from amplifierd.providers import merge_settings_providers
-
-        existing = [{"module": "provider-a", "config": {"key": "old"}}]
-        settings = [{"module": "provider-a", "config": {"key": "new"}}]
-        result = merge_settings_providers(existing, settings)
-        assert len(result) == 1
-        assert result[0]["config"]["key"] == "new"
-
-    def test_id_match_wins_over_module_mismatch(self) -> None:
-        """If an id matches, it should merge even if the module name differs."""
-        from amplifierd.providers import merge_settings_providers
-
-        # This might happen if a user renames a module in their settings
-        existing = [{"id": "my-provider", "module": "old-module-name", "config": {"key": "old"}}]
-        settings = [{"id": "my-provider", "module": "new-module-name", "config": {"key": "new"}}]
-        result = merge_settings_providers(existing, settings)
-        assert len(result) == 1
-        assert result[0]["module"] == "new-module-name"  # from settings
-        assert result[0]["config"]["key"] == "new"

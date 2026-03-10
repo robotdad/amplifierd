@@ -143,23 +143,14 @@ def merge_settings_providers(
         return list(settings_providers)
 
     # Bundle declares providers: settings may only update matches.
-    settings_by_id: dict[str, dict[str, Any]] = {
-        key: p
-        for p in settings_providers
-        if isinstance(p, dict)
-        and (key := (p.get("id") or p.get("module")))
-        and isinstance(key, str)
+    settings_by_module: dict[str, dict[str, Any]] = {
+        p["module"]: p for p in settings_providers if isinstance(p, dict) and "module" in p
     }
-
     result: list[dict[str, Any]] = []
     for p in existing:
-        if not isinstance(p, dict):
-            result.append(p)
-            continue
-
-        provider_id = p.get("id") or p.get("module")
-        if isinstance(provider_id, str) and provider_id in settings_by_id:
-            result.append(_merge_provider_item(p, settings_by_id[provider_id]))
+        module_id = p.get("module") if isinstance(p, dict) else None
+        if module_id and module_id in settings_by_module:
+            result.append(_merge_provider_item(p, settings_by_module[module_id]))
         else:
             result.append(p)
     return result
