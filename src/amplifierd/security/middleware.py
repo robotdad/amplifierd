@@ -115,9 +115,12 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
             request.client.host if request.client else "unknown",
         )
 
-        # Return a redirect for browser requests, plain 401 for API clients
+        # Return a redirect for browser requests, plain 401 for API clients.
+        # Preserve the original URL so the login page can redirect back.
         if "text/html" in request.headers.get("accept", ""):
-            return RedirectResponse(url="/login", status_code=302)
+            from urllib.parse import quote
+
+            return RedirectResponse(url=f"/login?next={quote(path, safe='/')}", status_code=302)
 
         return JSONResponse(
             status_code=401,
