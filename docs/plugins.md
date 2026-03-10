@@ -200,3 +200,51 @@ uv tool install \
 ```
 
 If two plugins pull incompatible versions of a shared dependency, uv will report the conflict at install time rather than at runtime.
+
+## Use case: Conversational onboarding
+
+Instead of clicking through configuration screens, a first-install experience can drop users into a chat conversation where the AI handles setup through natural language. The plugin system makes this possible: expose the daemon's configuration surface as endpoints, and the AI agent can introspect and modify setup state on the user's behalf.
+
+A conversational onboarding plugin needs two things:
+
+1. **Read endpoints** that let the agent check what's already configured -- which providers are registered, which plugins are active, which bundles are loaded.
+2. **Write endpoints** that let the agent change configuration -- enable a plugin, register a provider, set a preference.
+
+```python
+from fastapi import APIRouter, Request
+from pydantic import BaseModel
+
+
+def create_router(state) -> APIRouter:
+    router = APIRouter(prefix="/onboarding", tags=["onboarding"])
+
+    @router.get("/status")
+    async def get_setup_status(request: Request):
+        """Return current configuration state for the AI agent to inspect."""
+        settings = request.app.state.settings
+        registry = request.app.state.bundle_registry
+
+        return {
+            "providers": settings.configured_providers or [],
+            "bundles": registry.list() if registry else [],
+            "active_plugins": settings.active_plugins or [],
+            "has_default_provider": settings.default_provider is not None,
+        }
+
+    class ConfigUpdate(BaseModel):
+        key: str
+        value: str
+
+    @router.post("/configure")
+    async def update_config(request: Request, update: ConfigUpdate):
+        """Set a configuration value. Called by the AI agent during onboarding."""
+        settings = request.app.state.settings
+        settings.set(update.key, update.value)
+        return {"key": update.key, "value": update.value, "applied": True}
+
+    return router
+```
+
+These endpoints can be exposed as agent tools in a bundle, allowing the conversational AI to check what's configured and make changes on the user's behalf during onboarding. The chat agent calls `GET /onboarding/status` to understand what still needs setup, asks the user natural-language questions ("Which LLM provider do you want to use?"), and then calls `POST /onboarding/configure` to apply their choices.
+
+This pattern matters beyond onboarding. It turns amplifierd from just an API server into an AI-accessible control plane. Any configuration that has an HTTP endpoint can be driven by conversation -- plugin management, provider registration, preference tuning, bundle selection. The daemon becomes the surface the AI acts on, not just the surface it talks through.
