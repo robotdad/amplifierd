@@ -52,6 +52,8 @@ def client() -> Generator[TestClient]:
         mock_registry = _make_mock_registry()
         c.app.state.bundle_registry = mock_registry  # type: ignore[union-attr]
         c.app.state.session_manager._bundle_registry = mock_registry  # type: ignore[union-attr]  # noqa: SLF001
+        # Mark bundles as ready so the 503 prewarm guard does not block tests
+        c.app.state.bundles_ready.set()  # type: ignore[union-attr]
         yield c
 
 
@@ -116,3 +118,31 @@ class TestCreateSessionEndpoint:
         client.app.state.settings.default_bundle = None  # type: ignore[union-attr]
         resp = client.post("/sessions", json={})
         assert resp.status_code == 400
+
+    def test_create_session_uses_prewarmed_bundle_skips_registry_load(
+        self, client: TestClient
+    ) -> None:
+        """POST /sessions skips registry.load() when session_manager cache is populated.
+
+        When session_manager has a cached PreparedBundle for the default bundle,
+        manager.create() should skip the expensive registry.load() + bundle.prepare() pipeline.
+        """
+        # Build a fake prepared bundle that creates a new session
+        fake_session = _make_fake_session("prewarmed-session-1")
+        mock_prepared = MagicMock()
+        mock_prepared.create_session = AsyncMock(return_value=fake_session)
+
+        # Place it in the session_manager cache as if prewarm already ran
+        session_manager = client.app.state.session_manager  # type: ignore[union-attr]
+        session_manager.set_prepared_bundle("distro", mock_prepared)
+
+        # Reset the registry's load call count
+        mock_registry = client.app.state.bundle_registry  # type: ignore[union-attr]
+        mock_registry.load.reset_mock()
+
+        # POST with no bundle → should use default bundle → should use prewarmed bundle
+        resp = client.post("/sessions", json={})
+        assert resp.status_code == 201
+
+        # registry.load() must NOT have been called — we took the fast path
+        mock_registry.load.assert_not_called()

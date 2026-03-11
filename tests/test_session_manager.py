@@ -170,3 +170,78 @@ class TestResumePassesSessionCwd:
         assert call_kwargs["session_cwd"] == Path(working_dir)
         assert call_kwargs["session_id"] == session_id
         assert call_kwargs["is_resumed"] is True
+
+
+class TestSessionManagerPreparedBundleCache:
+    """Tests for the internal _prepared_bundles cache in SessionManager."""
+
+    @pytest.fixture
+    def manager_with_registry(self) -> SessionManager:
+        mock_registry = MagicMock()
+        mock_registry.load = AsyncMock()
+        return SessionManager(
+            event_bus=EventBus(),
+            settings=DaemonSettings(),
+            bundle_registry=mock_registry,
+        )
+
+    async def test_create_uses_cached_prepared_bundle(
+        self, manager_with_registry: SessionManager
+    ) -> None:
+        """create() uses _prepared_bundles cache and skips registry.load()."""
+        fake_session = MagicMock()
+        fake_session.session_id = "cached-session-1"
+        fake_session.parent_id = None
+
+        mock_prepared = MagicMock()
+        mock_prepared.create_session = AsyncMock(return_value=fake_session)
+
+        manager_with_registry.set_prepared_bundle("distro", mock_prepared)
+        handle = await manager_with_registry.create(bundle_name="distro")
+
+        # registry.load() must NOT be called — we used the internal cache
+        manager_with_registry._bundle_registry.load.assert_not_called()  # noqa: SLF001
+        assert handle.session_id == "cached-session-1"
+
+    async def test_create_falls_through_without_cache(
+        self, manager_with_registry: SessionManager
+    ) -> None:
+        """create() uses the slow path when no cached bundle exists."""
+        fake_session = MagicMock()
+        fake_session.session_id = "slow-session-1"
+        fake_session.parent_id = None
+
+        mock_prepared = MagicMock()
+        mock_prepared.create_session = AsyncMock(return_value=fake_session)
+        mock_bundle = MagicMock()
+        mock_bundle.prepare = AsyncMock(return_value=mock_prepared)
+        manager_with_registry._bundle_registry.load = AsyncMock(return_value=mock_bundle)  # noqa: SLF001
+
+        handle = await manager_with_registry.create(bundle_name="slow-bundle")
+
+        # registry.load() must be called — no cache available
+        manager_with_registry._bundle_registry.load.assert_called_once()  # noqa: SLF001
+        assert handle.session_id == "slow-session-1"
+
+    def test_set_and_clear_prepared_bundle(self, manager_with_registry: SessionManager) -> None:
+        """set_prepared_bundle stores a bundle; clear_prepared_bundle removes it."""
+        mock_prepared = MagicMock()
+        manager_with_registry.set_prepared_bundle("distro", mock_prepared)
+        assert manager_with_registry._prepared_bundles.get("distro") is mock_prepared  # noqa: SLF001
+
+        manager_with_registry.clear_prepared_bundle("distro")
+        assert "distro" not in manager_with_registry._prepared_bundles  # noqa: SLF001
+
+    def test_clear_all_prepared_bundles(self, manager_with_registry: SessionManager) -> None:
+        """clear_prepared_bundle() with no args clears all cached bundles."""
+        manager_with_registry.set_prepared_bundle("a", MagicMock())
+        manager_with_registry.set_prepared_bundle("b", MagicMock())
+        manager_with_registry.clear_prepared_bundle()
+        assert manager_with_registry._prepared_bundles == {}  # noqa: SLF001
+
+    async def test_create_without_bundle_raises(
+        self, manager_with_registry: SessionManager
+    ) -> None:
+        """create() with no bundle_name or bundle_uri raises ValueError."""
+        with pytest.raises(ValueError, match="bundle_name or bundle_uri required"):
+            await manager_with_registry.create()

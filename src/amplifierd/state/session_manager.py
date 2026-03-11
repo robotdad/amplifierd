@@ -44,6 +44,7 @@ class SessionManager:
         self._bundle_registry = bundle_registry
         # Prefer the explicit projects_dir; fall back to the legacy alias.
         self._projects_dir: Path | None = projects_dir or sessions_dir
+        self._prepared_bundles: dict[str, Any] = {}  # bundle_name -> PreparedBundle
         self._index: SessionIndex | None = None
         if self._projects_dir:
             index_path = self._projects_dir / "index.json"
@@ -54,6 +55,17 @@ class SessionManager:
                     self._index = SessionIndex.rebuild(self._projects_dir)
             else:
                 self._index = SessionIndex.rebuild(self._projects_dir)
+
+    def set_prepared_bundle(self, bundle_name: str, prepared: Any) -> None:
+        """Cache a pre-warmed PreparedBundle for instant session creation."""
+        self._prepared_bundles[bundle_name] = prepared
+
+    def clear_prepared_bundle(self, bundle_name: str | None = None) -> None:
+        """Clear cached PreparedBundle(s). Called on reload."""
+        if bundle_name:
+            self._prepared_bundles.pop(bundle_name, None)
+        else:
+            self._prepared_bundles.clear()
 
     @property
     def event_bus(self) -> EventBus:
@@ -236,17 +248,25 @@ class SessionManager:
             raise ValueError("bundle_name or bundle_uri required")
 
         wd = self.resolve_working_dir(working_dir)
-        name_or_uri = bundle_uri or bundle_name
-        bundle = await self._bundle_registry.load(name_or_uri)
 
-        # Inject providers from ~/.amplifier/settings.yaml BEFORE prepare()
-        # so the activation step downloads and installs their dependencies.
-        from amplifierd.providers import inject_providers, load_provider_config
+        # Fast path: use pre-warmed PreparedBundle if available
+        cache_key = bundle_name or bundle_uri
+        prepared = self._prepared_bundles.get(cache_key) if cache_key else None
 
-        providers = load_provider_config()
-        inject_providers(bundle, providers)
+        if prepared is None:
+            # Slow path: full load + inject_providers + prepare pipeline
+            name_or_uri = bundle_uri or bundle_name
+            bundle = await self._bundle_registry.load(name_or_uri)
 
-        prepared = await bundle.prepare()
+            # Inject providers from ~/.amplifier/settings.yaml BEFORE prepare()
+            # so the activation step downloads and installs their dependencies.
+            from amplifierd.providers import inject_providers, load_provider_config
+
+            providers = load_provider_config()
+            inject_providers(bundle, providers)
+
+            prepared = await bundle.prepare()
+
         session = await prepared.create_session(session_cwd=Path(wd))
 
         # Register transcript/metadata persistence hooks
@@ -367,25 +387,29 @@ class SessionManager:
         working_dir = metadata.get("working_dir", str(Path.home()))
 
         # 4. Load bundle, inject providers, prepare, create session
-        fallback = self._settings.default_bundle or "distro"
-        try:
-            bundle = await self._bundle_registry.load(bundle_name)
-        except Exception:
-            if bundle_name == fallback:
-                raise
-            logger.warning(
-                "Bundle %r not available, falling back to %r",
-                bundle_name,
-                fallback,
-            )
-            bundle = await self._bundle_registry.load(fallback)
+        # Fast path: use pre-warmed PreparedBundle if available
+        prepared = self._prepared_bundles.get(bundle_name)
+        if prepared is None:
+            fallback = self._settings.default_bundle or "distro"
+            try:
+                bundle = await self._bundle_registry.load(bundle_name)
+            except Exception:
+                if bundle_name == fallback:
+                    raise
+                logger.warning(
+                    "Bundle %r not available, falling back to %r",
+                    bundle_name,
+                    fallback,
+                )
+                bundle = await self._bundle_registry.load(fallback)
 
-        from amplifierd.providers import inject_providers, load_provider_config
+            from amplifierd.providers import inject_providers, load_provider_config
 
-        providers = load_provider_config()
-        inject_providers(bundle, providers)
+            providers = load_provider_config()
+            inject_providers(bundle, providers)
 
-        prepared = await bundle.prepare()
+            prepared = await bundle.prepare()
+
         session = await prepared.create_session(
             session_id=session_id,
             is_resumed=True,
