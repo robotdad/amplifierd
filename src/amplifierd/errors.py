@@ -45,7 +45,7 @@ except ImportError:
     _HAS_AMPLIFIER_CORE = False
 
 try:
-    from amplifier_lib.exceptions import (
+    from amplifier_foundation.exceptions import (
         BundleDependencyError,
         BundleError,
         BundleLoadError,
@@ -53,14 +53,14 @@ try:
         BundleValidationError,
     )
 
-    _HAS_AMPLIFIER_LIB = True
+    _HAS_AMPLIFIER_FOUNDATION = True
 except ImportError:
     BundleDependencyError = None  # type: ignore[assignment,misc]
     BundleError = None  # type: ignore[assignment,misc]
     BundleLoadError = None  # type: ignore[assignment,misc]
     BundleNotFoundError = None  # type: ignore[assignment,misc]
     BundleValidationError = None  # type: ignore[assignment,misc]
-    _HAS_AMPLIFIER_LIB = False
+    _HAS_AMPLIFIER_FOUNDATION = False
 
 from fastapi.responses import JSONResponse
 
@@ -70,7 +70,7 @@ if TYPE_CHECKING:
     from fastapi import FastAPI, Request
 
 # Ordered list: subclasses before parents so isinstance matches the most specific type first.
-# Only populated when amplifier_core/amplifier_lib are available.
+# Only populated when amplifier_core/amplifier_foundation are available.
 LLM_ERROR_MAP: list[tuple[type, int, str]] = (
     [
         (QuotaExceededError, 429, "quota-exceeded"),
@@ -102,7 +102,7 @@ BUNDLE_ERROR_MAP: list[tuple[type, int, str]] = (
         (BundleDependencyError, 422, "bundle-dependency-error"),
         (BundleError, 500, "bundle-error"),
     ]
-    if _HAS_AMPLIFIER_LIB
+    if _HAS_AMPLIFIER_FOUNDATION
     else []
 )
 
@@ -217,7 +217,7 @@ def register_error_handlers(app: FastAPI) -> None:
                 headers=headers or None,
             )
 
-    if _HAS_AMPLIFIER_LIB:
+    if _HAS_AMPLIFIER_FOUNDATION:
 
         @app.exception_handler(BundleError)
         async def bundle_error_handler(request: Request, exc: BundleError) -> JSONResponse:

@@ -18,14 +18,14 @@ dependencies = [
     "click>=8.1.0",
     "pyyaml>=6.0",
     "amplifier-core>=1.1.1",
-    "amplifier-lib",
+    "amplifier-foundation",
 ]
 
 [tool.uv]
 package = true
 
 [tool.uv.sources]
-amplifier-lib = { git = "https://github.com/microsoft/amplifier-lib", branch = "main" }
+amplifier-foundation = { git = "https://github.com/microsoft/amplifier-foundation", branch = "main" }
 
 [project.scripts]
 amplifierd = "amplifierd.cli:main"
