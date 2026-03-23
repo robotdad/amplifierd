@@ -125,8 +125,22 @@ def serve(
     settings = DaemonSettings()
 
     effective_host = host if host is not None else settings.host
-    effective_port = port if port is not None else settings.port
     effective_log_level = log_level if log_level is not None else settings.log_level
+
+    # Resolve port — auto-increment if the default is occupied, but honour an
+    # explicit --port exactly (user was deliberate; let the OS error speak).
+    if port is not None:
+        effective_port = port
+    else:
+        from amplifierd.port_utils import find_available_port
+
+        effective_port, was_incremented = find_available_port(settings.port)
+        if was_incremented:
+            click.echo(
+                f"Port {settings.port} is already in use — "
+                f"starting on {effective_port} instead.\n"
+                f"Use --port to set a specific port."
+            )
 
     # 1. Console logging (always available before daemon session dir)
     logging.basicConfig(
