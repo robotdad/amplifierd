@@ -30,7 +30,9 @@ def test_hosting_considerations_section_present() -> None:
 def test_dont_implement_own_auth_present() -> None:
     """'Don't implement your own auth' subsection must exist."""
     content = _content()
-    assert "Don't implement your own auth" in content or "implement your own auth" in content.lower()
+    assert (
+        "Don't implement your own auth" in content or "implement your own auth" in content.lower()
+    )
 
 
 def test_x_authenticated_user_header_documented() -> None:
@@ -79,7 +81,8 @@ def test_checklist_has_authenticated_user_item() -> None:
     # Verify it's in a checklist context (has a checkbox marker)
     lines = content.splitlines()
     found = any(
-        "request.state.authenticated_user" in line and ("- [ ]" in line or "- [x]" in line or "- [X]" in line)
+        "request.state.authenticated_user" in line
+        and ("- [ ]" in line or "- [x]" in line or "- [X]" in line)
         for line in lines
     )
     assert found, "Checklist item for request.state.authenticated_user not found"
