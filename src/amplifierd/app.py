@@ -290,6 +290,16 @@ def create_app(settings: DaemonSettings | None = None) -> FastAPI:
 
     app.state.settings = resolved_settings
     app.state.trusted_proxies = set(resolved_settings.trusted_proxies)
+    app.state.trust_proxy_auth = resolved_settings.trust_proxy_auth
+
+    if resolved_settings.trust_proxy_auth:
+        default_proxies = {"127.0.0.1", "::1"}
+        if app.state.trusted_proxies == default_proxies:
+            logger.warning(
+                "AMPLIFIERD_TRUST_PROXY_AUTH is enabled but AMPLIFIERD_TRUSTED_PROXIES "
+                "is not explicitly configured. Proxy auth headers will only be trusted "
+                "from localhost (127.0.0.1, ::1)."
+            )
 
     # CORS middleware — configurable via settings.allowed_origins
     app.add_middleware(

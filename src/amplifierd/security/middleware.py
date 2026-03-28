@@ -135,13 +135,32 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
         client_ip = _resolve_client_ip(direct_ip, forwarded_for, trusted_proxies)
         if is_localhost(client_ip):
             return await call_next(request)
+        trust_proxy_auth = getattr(request.app.state, "trust_proxy_auth", False)
+        if trust_proxy_auth:
+            # Normalize non-IP tokens (e.g., Starlette TestClient's "testclient") to
+            # loopback, matching the behaviour in _resolve_client_ip where non-IPs are
+            # treated as implicit local connections.
+            _check_ip = direct_ip
+            if direct_ip is not None:
+                try:
+                    ipaddress.ip_address(direct_ip)
+                except ValueError:
+                    _check_ip = "127.0.0.1"
+            if _check_ip in trusted_proxies:
+                proxy_user = request.headers.get("x-authenticated-user")
+                if proxy_user:
+                    request.state.authenticated_user = proxy_user
+                    return await call_next(request)
         verify = getattr(request.app.state, "auth_verify_session", None)
         if verify is None:
             logger.warning("SessionAuthMiddleware active but auth_verify_session not set")
             return await call_next(request)
         session_token = request.cookies.get(_SESSION_COOKIE)
-        if session_token is not None and verify(session_token) is not None:
-            return await call_next(request)
+        if session_token is not None:
+            username = verify(session_token)
+            if username is not None:
+                request.state.authenticated_user = username
+                return await call_next(request)
         logger.debug("Unauthenticated request to %s from %s", path, client_ip)
         if "text/html" in request.headers.get("accept", ""):
             from urllib.parse import quote
