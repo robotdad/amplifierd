@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from amplifierd.security.middleware import ApiKeyMiddleware, is_localhost
+from amplifierd.security.middleware import ApiKeyMiddleware, _resolve_client_ip, is_localhost
 
 
 @pytest.mark.unit
@@ -101,4 +101,54 @@ class TestApiKeyMiddleware:
         client = TestClient(app)
         with patch("amplifierd.security.middleware.is_localhost", return_value=True):
             resp = client.get("/sessions")
+        assert resp.status_code == 200
+
+
+@pytest.mark.unit
+class TestResolveClientIp:
+    def test_no_forwarded_header_returns_direct_ip(self):
+        assert _resolve_client_ip("192.168.1.100", None, {"127.0.0.1", "::1"}) == "192.168.1.100"
+
+    def test_untrusted_proxy_ignores_forwarded_header(self):
+        assert _resolve_client_ip("10.0.0.5", "203.0.113.50", {"127.0.0.1", "::1"}) == "10.0.0.5"
+
+    def test_trusted_proxy_uses_forwarded_header(self):
+        assert (
+            _resolve_client_ip("127.0.0.1", "203.0.113.50", {"127.0.0.1", "::1"}) == "203.0.113.50"
+        )
+
+    def test_trusted_proxy_uses_leftmost_ip(self):
+        assert (
+            _resolve_client_ip("127.0.0.1", "203.0.113.50, 10.0.0.1", {"127.0.0.1", "::1"})
+            == "203.0.113.50"
+        )
+
+    def test_none_direct_ip_returns_none(self):
+        assert _resolve_client_ip(None, None, {"127.0.0.1", "::1"}) is None
+
+
+@pytest.mark.unit
+class TestApiKeyMiddlewareProxyAware:
+    def test_remote_client_via_trusted_proxy_requires_api_key(self):
+        app = _make_app("test-secret")
+        app.state.trusted_proxies = {"127.0.0.1", "::1"}
+        client = TestClient(app)
+        resp = client.get("/sessions", headers={"X-Forwarded-For": "203.0.113.50"})
+        assert resp.status_code == 401
+
+    def test_remote_client_via_trusted_proxy_passes_with_api_key(self):
+        app = _make_app("test-secret")
+        app.state.trusted_proxies = {"127.0.0.1", "::1"}
+        client = TestClient(app)
+        resp = client.get(
+            "/sessions",
+            headers={"X-Forwarded-For": "203.0.113.50", "Authorization": "Bearer test-secret"},
+        )
+        assert resp.status_code == 200
+
+    def test_actual_localhost_without_forwarded_header_bypasses(self):
+        app = _make_app("test-secret")
+        app.state.trusted_proxies = {"127.0.0.1", "::1"}
+        client = TestClient(app)
+        resp = client.get("/sessions")
         assert resp.status_code == 200
