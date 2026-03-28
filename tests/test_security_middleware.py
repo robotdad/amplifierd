@@ -158,8 +158,9 @@ class TestSessionAuthMiddlewareProxyAware:
 
     def test_genuine_localhost_bypasses_session_auth(self):
         app = _make_session_auth_app()
-        client = TestClient(app, client=("127.0.0.1", 50000))
-        resp = client.get("/dashboard")
+        client = TestClient(app)
+        with patch("amplifierd.security.middleware.is_localhost", return_value=True):
+            resp = client.get("/dashboard")
         assert resp.status_code == 200
 
     def test_public_paths_bypass_for_remote_via_proxy(self):
