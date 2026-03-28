@@ -54,6 +54,8 @@ Settings resolve in priority order: CLI flags > environment variables > `~/.ampl
 | `default_working_dir` | `AMPLIFIERD_DEFAULT_WORKING_DIR` | `None` | Default CWD for new sessions |
 | `disabled_plugins` | `AMPLIFIERD_DISABLED_PLUGINS` | `[]` | Plugin names to skip |
 | `tls_mode` | `AMPLIFIERD_TLS_MODE` | `off` | TLS mode: `off`, `auto` (Tailscale), or `manual` (supply cert/key) |
+| `tls_certfile` | `AMPLIFIERD_TLS_CERTFILE` | `None` | Path to TLS certificate file (implies `--tls manual`) |
+| `tls_keyfile` | `AMPLIFIERD_TLS_KEYFILE` | `None` | Path to TLS private key file (implies `--tls manual`) |
 | `auth_enabled` | `AMPLIFIERD_AUTH_ENABLED` | `false` | Require authentication on all endpoints |
 | `trust_proxy_auth` | `AMPLIFIERD_TRUST_PROXY_AUTH` | `false` | Trust `X-Authenticated-User` header from upstream proxy |
 | `trusted_proxies` | `AMPLIFIERD_TRUSTED_PROXIES` | `["127.0.0.1","::1"]` | IP addresses allowed to set forwarded headers |
