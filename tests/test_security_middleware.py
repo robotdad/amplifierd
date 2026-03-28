@@ -170,12 +170,17 @@ class TestSessionAuthMiddlewareProxyAware:
         assert resp.status_code == 200
 
 
-def _make_proxy_auth_app() -> FastAPI:
+def _make_proxy_auth_app(
+    trusted_proxies: set[str] | None = None,
+    trust_proxy_auth: bool = True,
+) -> FastAPI:
     from amplifierd.security.middleware import SessionAuthMiddleware
 
     app = FastAPI()
-    app.state.trusted_proxies = {"127.0.0.1", "::1"}
-    app.state.trust_proxy_auth = True
+    app.state.trusted_proxies = (
+        trusted_proxies if trusted_proxies is not None else {"127.0.0.1", "::1"}
+    )
+    app.state.trust_proxy_auth = trust_proxy_auth
     app.state.auth_verify_session = lambda token: "testuser" if token.startswith("valid-") else None
     app.add_middleware(SessionAuthMiddleware)
 
@@ -207,21 +212,8 @@ class TestProxyAuthTrust:
 
     def test_untrusted_source_with_x_authenticated_user_rejected(self):
         """An untrusted source sending X-Authenticated-User header is rejected."""
-        from amplifierd.security.middleware import SessionAuthMiddleware
-
-        app = FastAPI()
-        app.state.trusted_proxies = {"10.0.0.99"}  # localhost (127.0.0.1) is NOT trusted
-        app.state.trust_proxy_auth = True
-        app.state.auth_verify_session = lambda token: (
-            "testuser" if token.startswith("valid-") else None
-        )
-        app.add_middleware(SessionAuthMiddleware)
-
-        @app.get("/dashboard")
-        async def dashboard(request: Request):
-            user = getattr(request.state, "authenticated_user", None)
-            return {"page": "dashboard", "user": user}
-
+        # localhost (127.0.0.1) is NOT in trusted_proxies
+        app = _make_proxy_auth_app(trusted_proxies={"10.0.0.99"})
         client = TestClient(app)
         resp = client.get(
             "/dashboard",
@@ -234,21 +226,7 @@ class TestProxyAuthTrust:
 
     def test_proxy_auth_disabled_ignores_header(self):
         """When trust_proxy_auth=False, X-Authenticated-User header is ignored."""
-        from amplifierd.security.middleware import SessionAuthMiddleware
-
-        app = FastAPI()
-        app.state.trusted_proxies = {"127.0.0.1", "::1"}
-        app.state.trust_proxy_auth = False
-        app.state.auth_verify_session = lambda token: (
-            "testuser" if token.startswith("valid-") else None
-        )
-        app.add_middleware(SessionAuthMiddleware)
-
-        @app.get("/dashboard")
-        async def dashboard(request: Request):
-            user = getattr(request.state, "authenticated_user", None)
-            return {"page": "dashboard", "user": user}
-
+        app = _make_proxy_auth_app(trust_proxy_auth=False)
         client = TestClient(app)
         resp = client.get(
             "/dashboard",
