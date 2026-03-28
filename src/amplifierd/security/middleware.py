@@ -60,11 +60,6 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         client_ip = _resolve_client_ip(direct_ip, forwarded_for, trusted_proxies)
         if is_localhost(client_ip):
             return await call_next(request)
-        # When trusted_proxies are configured, direct connections without an
-        # X-Forwarded-For header are treated as local (the proxy is the sole
-        # external entry point; any direct connection must be internal).
-        if trusted_proxies and not forwarded_for:
-            return await call_next(request)
         if request.url.path in _PUBLIC_PATHS:
             return await call_next(request)
         auth_header = request.headers.get("authorization", "")

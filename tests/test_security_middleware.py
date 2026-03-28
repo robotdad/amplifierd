@@ -145,10 +145,3 @@ class TestApiKeyMiddlewareProxyAware:
             headers={"X-Forwarded-For": "203.0.113.50", "Authorization": "Bearer test-secret"},
         )
         assert resp.status_code == 200
-
-    def test_actual_localhost_without_forwarded_header_bypasses(self):
-        app = _make_app("test-secret")
-        app.state.trusted_proxies = {"127.0.0.1", "::1"}
-        client = TestClient(app)
-        resp = client.get("/sessions")
-        assert resp.status_code == 200
